@@ -155,17 +155,26 @@ function setupShaders() {
     
     // define fragment shader in essl using es6 template strings
     var fShaderCode = `
+        precision mediump float;
+        uniform vec3 color;
+
         void main(void) {
-            gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0); // all fragments are white
+            gl_FragColor = vec4(color, 1.0); // all fragments are white
         }
     `;
     
     // define vertex shader in essl using es6 template strings
     var vShaderCode = `
         attribute vec3 vertexPosition;
+        uniform mat4 view;
+        uniform mat4 projection;
 
-        void main(void) {
-            gl_Position = vec4(vertexPosition, 1.0); // use the untransformed position
+        void main(void)
+        {
+            gl_Position = projection * view * vec4(vertexPosition, 1.0);
+            // gl_Position = projection * view * model * vec4(vertexPosition, 1.0);
+
+            // gl_Position = vec4(vertexPosition, 1.0);
         }
     `;
     
@@ -199,12 +208,14 @@ function setupShaders() {
                 vertexPositionAttrib = // get pointer to vertex shader input
                     gl.getAttribLocation(shaderProgram, "vertexPosition"); 
                 gl.enableVertexAttribArray(vertexPositionAttrib); // input to shader from array
+                return shaderProgram;
             } // end if no shader program link errors
         } // end if no compile errors
     } // end try 
     
     catch(e) {
         console.log(e);
+        return null;
     } // end catch
 } // end setup shaders
 
@@ -225,10 +236,75 @@ function renderTriangles() {
 /* MAIN -- HERE is where execution begins after window load */
 
 function main() {
+    var context = document.getElementById("myWebGLCanvas");
+    var w = context.width; // as set in html
+    var h = context.height;  // as set in html;
   
-  setupWebGL(); // set up the webGL environment
-  loadTriangles(); // load in the triangles from tri file
-  setupShaders(); // setup the webGL shaders
-  renderTriangles(); // draw the triangles using webGL
-  
+    setupWebGL(); // set up the webGL environment
+    loadTriangles(); // load in the triangles from tri file
+    var shaderProgram = setupShaders(); // setup the webGL shaders
+    renderTriangles(); // draw the triangles using webGL
+
+    const viewLoc = gl.getUniformLocation(shaderProgram, "view");
+    const projectionLoc = gl.getUniformLocation(shaderProgram, "projection");
+    const colorLoc = gl.getUniformLocation(shaderProgram, "color");
+
+    // setup camera
+    var cameraPos = vec3.fromValues(0.0, 0.0, 3.0);
+    var cameraTarget = vec3.fromValues(0.0, 0.0, 0.0);
+    var diff = vec3.create();
+    diff = vec3.subtract(diff, cameraPos, cameraTarget)
+    var cameraDirection = vec3.normalize(diff,diff);
+    var up = vec3.fromValues(0.0, 1.0, 0.0);
+    var cross = vec3.create();
+    var cross = vec3.cross(cross, up, cameraDirection);
+    var cameraRight = vec3.normalize(cross, cross);
+    var cameraUp = vec3.create();
+    var cameraUp = vec3.cross(cameraUp, cameraDirection, cameraRight);
+
+    const view = mat4.create();
+    const projection = mat4.create();
+    let color = vec3.create();
+
+    function render(timeMs) {
+        // create view matrix
+        requestAnimationFrame(render);
+
+        const time = timeMs * 0.001;
+
+        gl.useProgram(shaderProgram);
+
+        // View matrix
+        const radius = 10.0;
+        const camX = Math.sin(time) * radius;
+        const camZ = Math.cos(time) * radius;
+        let red   = 0.5 * Math.sin(time) + 0.5;
+        let green = 0.5 * Math.sin(time + 2 * Math.PI / 3) + 0.5;
+        let blue  = 0.5 * Math.sin(time + 4 * Math.PI / 3) + 0.5;
+        color = vec3.fromValues(red,green,blue);
+        gl.uniform3f(colorLoc, ...color);
+        
+        mat4.lookAt(view,
+                    [camX*0.5, 0.0, camZ*0.5],
+                    [0.0, 0.0, 0.0],
+                    cameraUp
+        );
+
+        gl.uniformMatrix4fv(viewLoc, false, view);
+
+        // Projection matrix
+        const fovRadians = 45.0 * Math.PI / 180.0;
+        mat4.perspective(
+            projection,
+            fovRadians,
+            w/h,
+            0.1,
+            100.0
+        );
+        gl.uniformMatrix4fv(projectionLoc, false, projection);
+
+        renderTriangles();
+    }
+
+    requestAnimationFrame(render);
 } // end main
